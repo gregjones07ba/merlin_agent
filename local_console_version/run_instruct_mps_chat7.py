@@ -64,6 +64,11 @@ def build_input_text(tok, system_msg: str, turns: List[Turn]) -> str:
     t = apply_chat_template_if_available(tok, system_msg, turns)
     return t if t is not None else build_manual_prompt(system_msg, turns)
 
+def pick_device(user_choice: Optional[str]) -> str:
+    if user_choice:
+        return user_choice
+    return "mps" if torch.backends.mps.is_available() else "cpu"
+    
 def pick_dtype(arg: str, device: str):
     if arg != "auto":
         return {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}[arg]
@@ -124,7 +129,7 @@ def log_divider(log_path: Path, label: str = "Session divider"):
 
 # ---------------- Generation ----------------
 
-def generate_once(model, tok, device: str, prompt_text: str,
+def generate_once(console, model, tok, device: str, prompt_text: str,
                   max_new: Optional[int], temperature: float, top_p: float, top_k: int,
                   rep_penalty: float, greedy: bool, stream: bool) -> str:
     inputs = tok(prompt_text, return_tensors="pt").to(device)
@@ -289,7 +294,7 @@ HELP_TEXT = """\
 /philosopher             Philosopher mode
 """
 
-def show_settings(args, system_msg: str, model_id: str, log_path: Path):
+def show_settings(console, args, system_msg: str, model_id: str, log_path: Path):
     table = Text()
     table.append(f"Model: {model_id}\n")
     table.append(f"System: {system_msg}\n")
@@ -308,8 +313,14 @@ def parse_command(s: str):
 # ---------------- Entrypoint ----------------
 
 def main():
-    console = ConsoleApp()
-    args = console.args
+    console_app = ConsoleApp()
+    console = console_app.console
+    args = console_app.args
+    device = "mps" if (args.device or pick_device(None)) == "mps" else "cpu"
+    dtype = torch.float16 if (args.dtype == "float16" or (args.dtype == "auto" and device == "mps")) else \
+        torch.bfloat16 if args.dtype == "bfloat16" else \
+        torch.float32
+
     model = args.model
     tok = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForCausalLM.from_pretrained(model, dtype=dtype, device_map={"": device})
@@ -335,7 +346,8 @@ def main():
                 yield from base_completer.get_completions(document, complete_event)
             # else: no suggestions
 
-    kb = KeyMap.kb
+    keymap = KeyMap()
+    kb = keymap.kb
     session = PromptSession(
         history=InMemoryHistory(),
         auto_suggest=AutoSuggestFromHistory(),
@@ -434,7 +446,7 @@ def main():
                     except ValueError as e:
                         console.print(f"[red]{e}[/red]")
             elif cmd == "/show":
-                show_settings(args, args.system, args.model, log_path)
+                show_settings(console, args, args.system, args.model, log_path)
             elif cmd == "/sum":
                 try:
                     # print(f"arg: {arg}")
@@ -490,7 +502,7 @@ def main():
         prompt_text = build_input_text(tok, args.system, history)
         console.print("Assistant: ", end="", style="bold cyan")
 
-        reply = generate_once(
+        reply = generate_once(console, 
             model, tok, device, prompt_text,
             args.max_new, args.temperature, args.top_p, args.top_k,
             args.rep_penalty, args.greedy, stream=not args.no_stream

@@ -1,0 +1,11 @@
+# Core dependencies for Merlin DM Agent
+torch>=2.0.0
+transformers>=4.30.0
+requests>=2.31.0
+
+# For the interactive console version (run_instruct_mps_chat7.py)
+rich>=13.0.0
+prompt-toolkit>=3.0.0
+
+# Optional but recommended
+accelerate>=0.20.0
