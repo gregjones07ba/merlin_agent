@@ -836,5 +836,3 @@ Andrew Chipper
     <source src="./audio/Andrew_Chipper.wav" type="audio/wav">
 </audio>
 
-
-### XTTS v2
